@@ -89,10 +89,24 @@ function perlinScales(a){
  const cv=document.createElement('canvas');cv.width=mw;cv.height=mh;
  const g=cv.getContext('2d'),d=g.createImageData(mw,mh);
  const seed=anatomySeeded(String(a.anatomySeed||23841)+'|color|'+a.tribe+'|'+(a.hybrid||''));
- const palette=['#d4a16d','#647d9c','#9bb56f','#ba7896','#7c6b9e','#dfc478','#548f89','#b65d57','#bc9f76','#456e74','#dfb8a8'];
  const parse=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
- const pick=(index)=>parse(palette[(seed%palette.length+index*3)%palette.length]);
- const dorsal=pick(0),flank=pick(1),belly=pick(2),wing=pick(3),ridge=pick(4);
+ // Tribe-appropriate families, with controlled palette variations per seed.
+ // Hybrid palettes can inherit colors from both parents.
+ const donor=a.hybrid&&a.hybrid!=='None'&&!isBlocked(a.tribe,a.hybrid)?a.hybrid:null;
+ const baseColors=canonColors[a.tribe]||canonColors.SandWing;
+ const donorColors=donor?(canonColors[donor]||baseColors):baseColors;
+ const influence=donor?Math.max(0,Math.min(1,(+a.hybridAmount||45)/100)):0;
+ const choose=(index)=>{
+  const n=noiseHash(index+7,seed%65521,seed+31);
+  const primary=parse(baseColors[(index+Math.floor(n*baseColors.length))%baseColors.length]);
+  const secondary=parse(donorColors[(index+Math.floor(n*donorColors.length))%donorColors.length]);
+  const mix=donor?influence*(.25+.65*noiseHash(index+19,seed%4093,seed+71)):0;
+  return primary.map((v,i)=>Math.round(v*(1-mix)+secondary[i]*mix));
+ };
+ const dorsal=choose(0),flank=choose(1),belly=choose(2),wing=choose(3),ridge=choose(4);
+ const brighten=(rgb,f)=>rgb.map(v=>Math.min(255,Math.round(v+(255-v)*f)));
+ const darken=(rgb,f)=>rgb.map(v=>Math.max(0,Math.round(v*(1-f))));
+ const bellyTone=brighten(belly,.17),wingTone=brighten(wing,.10),ridgeTone=darken(ridge,.22);
  const smooth=v=>{v=Math.max(0,Math.min(1,v));return v*v*(3-2*v)};
  const blend=(a,b,t)=>a.map((v,i)=>v*(1-t)+b[i]*t);
  const regions=[
@@ -120,33 +134,33 @@ function perlinScales(a){
   const undersideBand=(1-smooth((Math.abs(ny-ventralY)-.012)/.135))*underside;
   const dorsalBand=body*smooth((.54-ny+warp*.12)*7);
   let rgb=blend(flank,dorsal,Math.max(0,Math.min(1,.23+dorsalBand*.65+(coarse-.5)*.45)));
-  rgb=blend(rgb,belly,undersideBand*.88);
-  rgb=blend(rgb,wing,membrane*(.72+.18*coarse));
+  rgb=blend(rgb,bellyTone,undersideBand*.94);
+  rgb=blend(rgb,wingTone,membrane*(.86+.12*coarse));
   // Multiple organically varying ridge, rosette, and freckle layers.
   const bars=Math.sin((nx*.36+ny*1.3+warp*.16)*54+coarse*6);
   const ridges=body*smooth((bars-.48)*5)*(.23+.4*dorsalBand);
   const spots=smooth((fine-.635)*16)*body*.43;
   const marbling=smooth((Math.sin((nx*.7+ny*.4)*28+warp*12+line*5)-.38)*3)*.19;
-  rgb=blend(rgb,ridge,Math.min(.68,ridges+spots+marbling));
+  rgb=blend(rgb,ridgeTone,Math.min(.60,ridges+spots+marbling));
   if(membrane>.08){
    const veins=Math.pow(Math.abs(Math.sin((nx*1.4+ny*.8+warp*.07)*55)),24)*membrane*.24;
    rgb=blend(rgb,dorsal,veins);
   }
-  const shade=(coarse-.5)*21+(fine-.5)*12;
+  const shade=(coarse-.5)*12+(fine-.5)*7;
   const k=(y*mw+x)*4;
   for(let ch=0;ch<3;ch++)d.data[k+ch]=Math.max(0,Math.min(255,Math.round(rgb[ch]+shade)));
   d.data[k+3]=255;
  }
  g.putImageData(d,0,0);ctx.save();ctx.imageSmoothingEnabled=true;ctx.drawImage(cv,0,0,w,h);ctx.restore();
  // A lightweight hand-drawn belly scute rhythm, locked to torso and neck.
- ctx.save();ctx.globalAlpha=.19;ctx.lineWidth=Math.max(1,w/580);
+ ctx.save();ctx.globalAlpha=.34;ctx.lineWidth=Math.max(1.5,w/470);
  ctx.strokeStyle='#251b2a';
  for(let i=0;i<10;i++){
   const t=i/9,x=w*(.48+t*.38),y=h*(.67-t*.24+.012*Math.sin(t*13+seed));
   ctx.beginPath();ctx.moveTo(x-w*.043,y+h*.019);ctx.quadraticCurveTo(x,y+h*.042,x+w*.036,y-h*.011);ctx.stroke();
  }
  // Shallow upper-scale overlapping arcs follow the back and neck.
- ctx.globalAlpha=.12;
+ ctx.globalAlpha=.26;
  for(let i=0;i<30;i++){
   const t=i/29,x=w*(.39+t*.49),y=h*(.48-t*.25+.025*Math.sin(t*8+seed));
   const size=w*(.012+.006*fbm(t*7,2,seed+777));
