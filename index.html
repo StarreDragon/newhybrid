@@ -12,7 +12,11 @@ function sync(){let tribe=$('tribe').value,sharp=tribe==='SharpWing';$('ancestry
 function get(){let x={};for(let k of ids)x[k]=$(k).type==='checkbox'?$(k).checked:$(k).value;x.parts=[...parts];x.strokes=strokes;x.profile=forgeProfile;return x}
 function set(x){for(let k of ids)if(x[k]!==undefined)$(k).type==='checkbox'?$(k).checked=!!x[k]:$(k).value=x[k];parts=new Set(x.parts||[]);strokes=x.strokes||[];forgeProfile=x.profile||null;renderForgeProfile();document.querySelectorAll('[data-part]').forEach(b=>b.classList.toggle('selected',parts.has(b.dataset.part)));sync();updateAnatomyPicker();renderLayerPalette();draw()}
 function loadImg(src){return new Promise((resolve,reject)=>{let im=new Image();im.onload=()=>resolve(im);im.onerror=reject;im.src=src})}
-async function prepare(t){if(!images[t]){[images[t],masks[t]]=await Promise.all([loadImg('assets/'+t+'.webp'),loadImg('assets/'+t+'-mask.png')])}}
+async function prepare(t){
+ if(images[t]&&masks[t])return;
+ const [art,mask]=await Promise.all([loadImg('assets/'+t+'.webp'),loadImg('assets/'+t+'-mask.png')]);
+ images[t]=art;masks[t]=mask;
+}
 
 /* Convert grayscale art masks into true alpha masks. A grayscale PNG can
  * have full opacity everywhere, so destination-in alone cannot clip it. */
@@ -395,6 +399,9 @@ async function drawInternal(){
  catch(e){$('notice').textContent='Could not load dragon art: '+(e.message||'missing asset');return}
  if(ticket!==drawTicket)return;
  const im=images[t],mask=masks[t];if(!im?.naturalWidth||!im?.naturalHeight)throw new Error('Dragon image did not load');c.width=im.naturalWidth;c.height=im.naturalHeight;
+ // Paint the original art immediately, before any optional hybrid effects.
+ // If color processing fails, the dragon remains visible.
+ ctx.clearRect(0,0,c.width,c.height);ctx.drawImage(im,0,0,c.width,c.height);
  ctx.clearRect(0,0,c.width,c.height);
  if(a.paper){ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height)}
  const layer=document.createElement('canvas');layer.width=c.width;layer.height=c.height;
@@ -589,5 +596,10 @@ $('generateOC').onclick=()=>{
 };
 $('rerollColors').onclick=()=>{randomOCColors();draw()};
 $('rerollAnatomy').onclick=()=>{$('anatomySeed').value=(Math.floor(Math.random()*99999998)+1);draw()};
-renderLayerPalette();sync();renderSaved();draw();
+// Initialize controls independently so a failing saved-design renderer cannot
+// prevent the first dragon from loading or the buttons from responding.
+try{renderLayerPalette()}catch(e){console.error('Palette initialization:',e)}
+try{sync()}catch(e){console.error('Tribe initialization:',e)}
+try{renderSaved()}catch(e){console.error('Saved designs initialization:',e)}
+draw();
 </script></body></html>
