@@ -529,7 +529,11 @@ const originalSeven=new Set(['MudWing','SandWing','SkyWing','SeaWing','RainWing'
 function drawHybridLines(primary,secondary,amount,t1,t2,settings){
  const w=c.width,h=c.height;
  if(!secondary||amount<=0){ctx.drawImage(primary,0,0,w,h);return}
- const donor=registeredDonor(primary,secondary,w,h,t1,t2);
+ // The original seven were drawn on matching coordinates: never register,
+ // shift, or resize their 7×7 combinations.
+ const donor=(originalSeven.has(t1)&&originalSeven.has(t2))
+  ? (()=>{const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(secondary,0,0,w,h);return cv})()
+  : registeredDonor(primary,secondary,w,h,t1,t2);
  // One Perlin selection field shared by both parents: where donor ink is
  // visible, base ink is removed, preventing two overlapping outlines.
  const step=3,mw=Math.ceil(w/step),mh=Math.ceil(h/step);
