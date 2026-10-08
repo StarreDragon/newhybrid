@@ -370,18 +370,25 @@ function drawHybridLines(primary,secondary,amount,t1,t2,settings){
  const names=Object.keys(anatomyRegions),seed=Array.from(t1+'|'+t2).reduce((n,ch)=>Math.imul(n,31)+ch.charCodeAt(0)|0,173);
  const explicit=settings&&settings.hybridParts?new Set(settings.hybridParts.split(',').filter(Boolean)):null;
  const threshold=Math.max(0,Math.min(1,amount));
- // Draw the primary exactly once. Overlay donor ink only where a feature
- // belongs; feathered edges merge without erasing primary contours or leaving
- // transparent seams at the feature boundaries.
- ctx.drawImage(primary,0,0,w,h);
+ // Compose the lineart separately: remove primary ink under every selected
+ // feature mask, then place its aligned donor ink in the cleared region.
+ const base=document.createElement('canvas');base.width=w;base.height=h;
+ const bg=base.getContext('2d');bg.drawImage(primary,0,0,w,h);
+ const transfers=[];
  for(let i=0;i<names.length;i++){
   const name=names[i],donorWins=explicit?explicit.has(name):noiseHash(i+13,29,seed)<threshold;
   if(!donorWins)continue;
-  const mask=anatomyMask(name,w,h),layer=document.createElement('canvas');layer.width=w;layer.height=h;
-  const g=layer.getContext('2d');g.drawImage(aligned,0,0);
-  g.globalCompositeOperation='destination-in';g.drawImage(mask,0,0);
-  ctx.save();ctx.globalAlpha=.92;ctx.drawImage(layer,0,0);ctx.restore();
+  const mask=anatomyMask(name,w,h);
+  const donor=document.createElement('canvas');donor.width=w;donor.height=h;
+  const dg=donor.getContext('2d');dg.drawImage(aligned,0,0);
+  dg.globalCompositeOperation='destination-in';dg.drawImage(mask,0,0);
+  transfers.push(donor);
+  bg.save();bg.globalCompositeOperation='destination-out';bg.drawImage(mask,0,0);bg.restore();
  }
+ // Paint donor features only after all original feature ink has been removed.
+ // This avoids later masks accidentally erasing earlier donor details.
+ ctx.drawImage(base,0,0);
+ for(const donor of transfers)ctx.drawImage(donor,0,0);
 }
 // ctx is reassigned only within draw to compose offscreen layers
 for(let id of ids)$(id).addEventListener('input',()=>{if(id==='hybridAmount')$('hybridAmountLabel').textContent=$('hybridAmount').value+'%';if(id==='tribe'||id==='hybrid'||id==='metal'||id==='accent')sync();if(id==='tribe')renderLayerPalette();draw()});document.querySelectorAll('[data-part]').forEach(b=>b.onclick=()=>{parts.has(b.dataset.part)?parts.delete(b.dataset.part):parts.add(b.dataset.part);b.classList.toggle('selected');draw()});
