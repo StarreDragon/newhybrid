@@ -628,22 +628,24 @@ function inheritanceField(t1,t2,amount,settings,w,h){
 function hybridSilhouette(t1,t2,amount,settings,w,h){
  const primary=alphaMask(t1),secondary=alphaMask(t2);
  const donor=document.createElement('canvas');donor.width=w;donor.height=h;
- if(originalSeven.has(t1)&&originalSeven.has(t2))donor.getContext('2d').drawImage(secondary,0,0,w,h);
+ const dg=donor.getContext('2d');
+ // Original seven share pixel coordinates: absolutely no registration.
+ if(originalSeven.has(t1)&&originalSeven.has(t2))dg.drawImage(secondary,0,0,w,h);
  else {
   const sw=secondary.width,sh=secondary.height,scale=Math.min(w/sw,h/sh);
-  const p=torsoAnchor(t1),q=torsoAnchor(t2);
-  donor.getContext('2d').drawImage(secondary,p.x*w-q.x*sw*scale,p.y*h-q.y*sh*scale,sw*scale,sh*scale);
+  dg.drawImage(secondary,(w-sw*scale)/2,(h-sh*scale)/2,sw*scale,sh*scale);
  }
  const field=inheritanceField(t1,t2,amount,settings,w,h);
+ // Donor contributes ONLY its own masked shape within Perlin-selected areas.
+ const donorPart=document.createElement('canvas');donorPart.width=w;donorPart.height=h;
+ const pg=donorPart.getContext('2d');pg.drawImage(donor,0,0,w,h);
+ pg.globalCompositeOperation='destination-in';pg.drawImage(field,0,0,w,h);
+ // Replace the primary only where donor mask actually exists. A plain
+ // union leaves SandWing wing/tail masks visibly stacked and doubled.
  const cv=document.createElement('canvas');cv.width=w;cv.height=h;
- const g=cv.getContext('2d');
- // Keep all of the primary silhouette and add donor-owned anatomy where
- // the SAME field selects the donor's linework. No detached solid rectangles.
- g.drawImage(primary,0,0,w,h);
- const addition=document.createElement('canvas');addition.width=w;addition.height=h;
- const ag=addition.getContext('2d');ag.drawImage(donor,0,0,w,h);
- ag.globalCompositeOperation='destination-in';ag.drawImage(field,0,0,w,h);
- g.drawImage(addition,0,0);
+ const g=cv.getContext('2d');g.drawImage(primary,0,0,w,h);
+ g.globalCompositeOperation='destination-out';g.drawImage(donorPart,0,0,w,h);
+ g.globalCompositeOperation='source-over';g.drawImage(donorPart,0,0,w,h);
  return cv;
 }
 function drawHybridLines(primary,secondary,amount,t1,t2,settings){
