@@ -26,17 +26,19 @@ function alphaMask(t){
  const source=masks[t],cv=document.createElement('canvas');
  cv.width=source.naturalWidth;cv.height=source.naturalHeight;
  const g=cv.getContext('2d',{willReadFrequently:true});g.drawImage(source,0,0);
- const frame=g.getImageData(0,0,cv.width,cv.height),d=frame.data;
- const w=cv.width,h=cv.height;
+ const frame=g.getImageData(0,0,cv.width,cv.height),d=frame.data,w=cv.width,h=cv.height;
  const corners=[0,(w-1)*4,((h-1)*w)*4,(w*h-1)*4];
  const background=corners.reduce((sum,i)=>sum+(d[i]+d[i+1]+d[i+2])/3,0)/4;
+ const cornerAlpha=corners.reduce((sum,i)=>sum+d[i+3],0)/4;
+ // Transparent PNG masks already encode the correct silhouette in alpha.
+ // Converting their black RGB pixels to luminance made the entire mask
+ // transparent, which hid ALL Perlin coloring.
+ const hasTransparency=cornerAlpha<240;
  for(let i=0;i<d.length;i+=4){
+  const originalAlpha=d[i+3];
   const lum=(d[i]+d[i+1]+d[i+2])/3;
-  // Treat the corner/background tone as transparent and the opposite tone
-  // as the fill region; preserve antialiasing at the boundary.
-  const opacity=Math.min(255,Math.abs(lum-background)*1.15);
-  d[i]=d[i+1]=d[i+2]=255;
-  d[i+3]=Math.round(opacity*(d[i+3]/255));
+  const opacity=hasTransparency?originalAlpha:Math.min(255,Math.abs(lum-background)*1.15);
+  d[i]=d[i+1]=d[i+2]=255;d[i+3]=Math.round(opacity);
  }
  g.putImageData(frame,0,0);alphaMasks[t]=cv;return cv;
 }
@@ -139,14 +141,14 @@ function hybridInheritance(a){
    if(proximity>.02){weight+=r.weight*proximity;total+=proximity;}
   }
   const influence=Math.max(0,Math.min(1,weight/total));
-  const noise=(coarse-.5)*.95+(fine-.5)*.15;
-  let coverage=smooth((noise+(influence-.5)*.70)*6);
+  const noise=(coarse-.5)*1.5+(fine-.5)*.18;
+  let coverage=smooth((noise+(influence-.38)*.85+.16)*6);
   if(style==='split')coverage=smooth((nx+.25*warp-.50+(influence-.5)*.55)*10+(coarse-.5)*3);
   else if(style==='bands')coverage*=smooth((Math.sin((nx*.8+ny+warp*.2)*27)+.15)*3);
   else if(style==='freckles')coverage*=smooth((fine-.56)*15);
   if(disabled)coverage=0;
   const k=(y*cw+x)*4;pixels.data[k]=rgb[0];pixels.data[k+1]=rgb[1];pixels.data[k+2]=rgb[2];
-  pixels.data[k+3]=Math.round(255*coverage*(.28+.68*amount));
+  pixels.data[k+3]=Math.round(255*coverage*(.40+.58*amount));
  }
  g.putImageData(pixels,0,0);
  ctx.save();ctx.imageSmoothingEnabled=true;ctx.drawImage(buffer,0,0,w,h);ctx.restore();
