@@ -470,20 +470,35 @@ function inkBounds(im){
  const b=n>30?{x:x0/sw,y:y0/sh,w:(x1-x0+1)/sw,h:(y1-y0+1)/sh}:{x:0,y:0,w:1,h:1};
  inkBoundsCache.set(im,b);return b;
 }
-function registeredDonor(primary,secondary,w,h){
- // Preserve original proportions. Matching whole-figure ink bounds shrank
- // dragons with broad wings because the wings dominated the bounding box.
- // Both source drawings share the same normalized layout; register their
- // body/shoulder anchors without resizing the donor's anatomy.
+/* Register on torso/neck landmarks, never the full wing-inclusive bounds.
+ * This avoids squashing wide-winged tribes and centers mismatched source art. */
+const anchorCache={};
+function torsoAnchor(t){
+ if(anchorCache[t])return anchorCache[t];
+ const mask=alphaMask(t),cv=document.createElement('canvas');
+ cv.width=160;cv.height=120;
+ const g=cv.getContext('2d',{willReadFrequently:true});
+ g.drawImage(mask,0,0,cv.width,cv.height);
+ const data=g.getImageData(0,0,cv.width,cv.height).data;
+ let sx=0,sy=0,weight=0;
+ // Lower torso and neck; avoid wings, tails, and head spikes.
+ for(let y=48;y<92;y++)for(let x=73;x<137;x++){
+  const a=data[(y*160+x)*4+3]/255;
+  const neck=(x>108&&y<70)?0.45:1;
+  const k=a*neck;
+  sx+=x*k;sy+=y*k;weight+=k;
+ }
+ return anchorCache[t]=weight>4?{x:sx/weight/160,y:sy/weight/120}:{x:.62,y:.60};
+}
+function registeredDonor(primary,secondary,w,h,t1,t2){
  const cv=document.createElement('canvas');cv.width=w;cv.height=h;
  const g=cv.getContext('2d');
- const pw=primary.naturalWidth||w,ph=primary.naturalHeight||h;
  const sw=secondary.naturalWidth||w,sh=secondary.naturalHeight||h;
- // Map full source canvases into the same normalized coordinates; this is
- // independent of wing span and does not crop the donor's wings.
- const scale=Math.min(w/sw,h/sh);
- const dw=sw*scale,dh=sh*scale;
- g.drawImage(secondary,(w-dw)/2,(h-dh)/2,dw,dh);
+ // Fit full canvas uniformly. Never scale to match wing or ink bounds.
+ const scale=Math.min(w/sw,h/sh),dw=sw*scale,dh=sh*scale;
+ const base=torsoAnchor(t1),other=torsoAnchor(t2);
+ const dx=base.x*w-other.x*dw,dy=base.y*h-other.y*dh;
+ g.drawImage(secondary,dx,dy,dw,dh);
  return cv;
 }
 /* Generate a real silhouette for each hybrid using the same inherited
@@ -512,12 +527,7 @@ const originalSeven=new Set(['MudWing','SandWing','SkyWing','SeaWing','RainWing'
 function drawHybridLines(primary,secondary,amount,t1,t2,settings){
  const w=c.width,h=c.height;
  if(!secondary||amount<=0){ctx.drawImage(primary,0,0,w,h);return}
- const donor=registeredDonor(primary,secondary,w,h);
- if(!originalSeven.has(t1)||!originalSeven.has(t2)){
-  ctx.drawImage(primary,0,0,w,h);
-  ctx.save();ctx.globalAlpha=Math.min(.6,amount*.6);ctx.drawImage(donor,0,0,w,h);ctx.restore();
-  return;
- }
+ const donor=registeredDonor(primary,secondary,w,h,t1,t2);
  // One Perlin selection field shared by both parents: where donor ink is
  // visible, base ink is removed, preventing two overlapping outlines.
  const step=3,mw=Math.ceil(w/step),mh=Math.ceil(h/step);
