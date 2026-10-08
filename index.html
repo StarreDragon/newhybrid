@@ -331,13 +331,14 @@ const anatomyRegions={
 function anatomyMask(name,w,h){
  const p=anatomyRegions[name],cv=document.createElement('canvas');cv.width=w;cv.height=h;
  const g=cv.getContext('2d');g.translate(p.cx*w,p.cy*h);g.rotate(p.angle);
- const rx=p.rx*w,ry=p.ry*h;
- // Feather only the junction; opaque core keeps parent ink sharp.
- const grad=g.createRadialGradient(0,0,Math.min(rx,ry)*.65,0,0,Math.max(rx,ry));
- grad.addColorStop(0,'rgba(255,255,255,1)');grad.addColorStop(.68,'rgba(255,255,255,1)');
+ // A unit-circle gradient transformed into the region's ellipse. The previous
+ // gradient used pixel radii, causing unequal feathering and visible seams.
+ g.scale(p.rx*w,p.ry*h);
+ const grad=g.createRadialGradient(0,0,.82,0,0,1);
+ grad.addColorStop(0,'rgba(255,255,255,1)');
+ grad.addColorStop(.82,'rgba(255,255,255,1)');
  grad.addColorStop(1,'rgba(255,255,255,0)');
- g.scale(rx,ry);g.fillStyle=grad; // gradient in device space is handled before scale
- g.scale(1/rx,1/ry);g.beginPath();g.ellipse(0,0,rx,ry,0,0,Math.PI*2);g.fill();
+ g.fillStyle=grad;g.beginPath();g.arc(0,0,1,0,Math.PI*2);g.fill();
  return cv;
 }
 /* Register the donor art to the primary illustration before feature transfer.
@@ -385,6 +386,13 @@ function drawHybridLines(primary,secondary,amount,t1,t2,settings){
   const donor=document.createElement('canvas');donor.width=w;donor.height=h;
   const dg=donor.getContext('2d');dg.drawImage(aligned,0,0);
   dg.globalCompositeOperation='destination-in';dg.drawImage(mask,0,0);
+  // Don't cut a hole in the original drawing when this donor has no ink in
+  // the requested region (common with very different wing/tail anatomy).
+  const probe=document.createElement('canvas');probe.width=64;probe.height=64;
+  const pg=probe.getContext('2d',{willReadFrequently:true});pg.drawImage(donor,0,0,64,64);
+  const pixels=pg.getImageData(0,0,64,64).data;
+  let coverage=0;for(let k=3;k<pixels.length;k+=4)if(pixels[k]>28)coverage++;
+  if(coverage<4)continue;
   transfers.push(donor);
   bg.save();bg.globalCompositeOperation='destination-out';bg.drawImage(mask,0,0);bg.restore();
  }
