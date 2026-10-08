@@ -406,7 +406,9 @@ async function drawInternal(){
  const im=images[t],mask=masks[t];if(!im?.naturalWidth||!im?.naturalHeight)throw new Error('Dragon image did not load');c.width=im.naturalWidth;c.height=im.naturalHeight;
  // Paint the original art immediately, before any optional hybrid effects.
  // If color processing fails, the dragon remains visible.
- ctx.clearRect(0,0,c.width,c.height);ctx.drawImage(im,0,0,c.width,c.height);
+ ctx.clearRect(0,0,c.width,c.height);
+ // Do not paint base ink twice: the final Perlin lineart compositor owns it.
+ if(!a.lines)ctx.drawImage(im,0,0,c.width,c.height);
  if(a.paper){ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height)}
  const layer=document.createElement('canvas');layer.width=c.width;layer.height=c.height;
  const main=ctx;ctx=layer.getContext('2d');
@@ -491,14 +493,14 @@ function torsoAnchor(t){
  return anchorCache[t]=weight>4?{x:sx/weight/160,y:sy/weight/120}:{x:.62,y:.60};
 }
 function registeredDonor(primary,secondary,w,h,t1,t2){
+ // Use the same canvas-space registration for BOTH parents. Never warp
+ // the donor to its ink bounds or offset it using guessed torso anchors.
  const cv=document.createElement('canvas');cv.width=w;cv.height=h;
  const g=cv.getContext('2d');
  const sw=secondary.naturalWidth||w,sh=secondary.naturalHeight||h;
- // Fit full canvas uniformly. Never scale to match wing or ink bounds.
- const scale=Math.min(w/sw,h/sh),dw=sw*scale,dh=sh*scale;
- const base=torsoAnchor(t1),other=torsoAnchor(t2);
- const dx=base.x*w-other.x*dw,dy=base.y*h-other.y*dh;
- g.drawImage(secondary,dx,dy,dw,dh);
+ const scale=Math.min(w/sw,h/sh);
+ const dw=sw*scale,dh=sh*scale;
+ g.drawImage(secondary,(w-dw)/2,(h-dh)/2,dw,dh);
  return cv;
 }
 /* Generate a real silhouette for each hybrid using the same inherited
