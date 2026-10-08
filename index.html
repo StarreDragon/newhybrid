@@ -20,7 +20,7 @@ function set(x){for(let k of ids)if(x[k]!==undefined)$(k).type==='checkbox'?$(k)
 function loadImg(src){return new Promise((resolve,reject)=>{let im=new Image();im.onload=()=>resolve(im);im.onerror=reject;im.src=src})}
 async function prepare(t){
  if(images[t]&&masks[t])return;
- // Prefer the new shared-canvas transparent PNG artwork; older WebP files remain as fallback.\n const [art,mask]=await Promise.all([loadImg('assets/'+t+'.png').catch(()=>loadImg('assets/'+t+'.webp')),loadImg('assets/'+t+'-mask.png')]);
+ // Prefer shared-canvas PNG artwork.\n const [art,mask]=await Promise.all([loadImg('assets/'+t+'.png').catch(()=>loadImg('assets/'+t+'.webp')),loadImg('assets/'+t+'-mask.png')]);
  images[t]=art;masks[t]=mask;
 }
 
@@ -605,14 +605,13 @@ function hybridRegions(t1,t2,amount,settings,w,h){
 }
 const originalSeven=new Set(['MudWing','SandWing','SkyWing','SeaWing','RainWing','IceWing','NightWing']);
 function hybridDonorCanvas(t1,t2,w,h){
- // Uniform source canvas: when the source dimensions match, keep every pixel
- // at its authored canvas coordinate; no offset, stretching or re-registration.
+ const donor=images[t2];
+ if(donor.naturalWidth!==w||donor.naturalHeight!==h){
+  throw new Error('Shared-canvas dimensions differ: '+t1+' / '+t2);
+ }
  const cv=document.createElement('canvas');cv.width=w;cv.height=h;
- const donor=images[t2],g=cv.getContext('2d');
- if(donor.naturalWidth===w&&donor.naturalHeight===h){g.drawImage(donor,0,0);return cv}
- // Legacy mixed-size sources are still supported until PNGs are deployed.
- if(originalSeven.has(t1)&&originalSeven.has(t2)){g.drawImage(donor,0,0,w,h);return cv}
- return registeredDonor(images[t1],donor,w,h,t1,t2);
+ cv.getContext('2d').drawImage(donor,0,0);
+ return cv;
 }
 function inheritanceField(t1,t2,amount,settings,w,h){
  const step=3,mw=Math.ceil(w/step),mh=Math.ceil(h/step);
