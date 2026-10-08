@@ -437,55 +437,36 @@ function hybridRegions(t1,t2,amount,settings,w,h){
  return names.filter((name,i)=>explicit?explicit.has(name):noiseHash(i+13,29,seed)<threshold)
   .map(name=>anatomyMask(name,w,h));
 }
+/* Safe hybrid rendering: until anatomy-specific masks and attachment anchors
+ * are available, the primary art owns the outer silhouette. This prevents
+ * disconnected donor mask islands from appearing outside the dragon. */
 function hybridSilhouette(t1,t2,amount,settings,w,h){
- const base=alphaMask(t1),donor=registeredDonor(base,alphaMask(t2),w,h);
- const output=document.createElement('canvas');output.width=w;output.height=h;
- const g=output.getContext('2d');g.drawImage(base,0,0,w,h);
- for(const region of hybridRegions(t1,t2,amount,settings,w,h)){
-  // Erase just the selected primary feature, then use the donor's actual
-  // silhouette inside that feature. No opaque rectangular color regions.
-  const piece=document.createElement('canvas');piece.width=w;piece.height=h;
-  const pg=piece.getContext('2d');pg.drawImage(donor,0,0);
-  pg.globalCompositeOperation='destination-in';pg.drawImage(region,0,0);
-  g.save();g.globalCompositeOperation='destination-out';g.drawImage(region,0,0);g.restore();
-  g.drawImage(piece,0,0);
- }
- return output;
+ const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+ cv.getContext('2d').drawImage(alphaMask(t1),0,0,w,h);
+ return cv;
 }
 function drawHybridLines(primary,secondary,amount,t1,t2,settings){
  const w=c.width,h=c.height;
+ // Draw the original illustration intact. Inherited interior details can
+ // appear only inside its real color mask; no feature cutouts or detached
+ // donor outlines are permitted in safe mode.
+ ctx.drawImage(primary,0,0,w,h);
  const aligned=registeredDonor(primary,secondary,w,h);
- const names=Object.keys(anatomyRegions),seed=Array.from(t1+'|'+t2).reduce((n,ch)=>Math.imul(n,31)+ch.charCodeAt(0)|0,173);
+ const silhouette=alphaMask(t1);
+ const seed=Array.from(t1+'|'+t2).reduce((n,ch)=>Math.imul(n,31)+ch.charCodeAt(0)|0,173);
  const explicit=settings&&settings.hybridParts?new Set(settings.hybridParts.split(',').filter(Boolean)):null;
- const threshold=Math.max(0,Math.min(1,amount));
- // Compose the lineart separately: remove primary ink under every selected
- // feature mask, then place its aligned donor ink in the cleared region.
- const base=document.createElement('canvas');base.width=w;base.height=h;
- const bg=base.getContext('2d');bg.drawImage(primary,0,0,w,h);
- const transfers=[];
+ const names=['torso','neck','head'];
  for(let i=0;i<names.length;i++){
-  const name=names[i],donorWins=explicit?explicit.has(name):noiseHash(i+13,29,seed)<threshold;
-  if(!donorWins)continue;
-  const mask=anatomyMask(name,w,h);
-  // Do not clip inherited ink to the original silhouette: large donor
-  // wings and fins must be allowed to extend beyond the primary outline.
-  const donor=document.createElement('canvas');donor.width=w;donor.height=h;
-  const dg=donor.getContext('2d');dg.drawImage(aligned,0,0);
-  dg.globalCompositeOperation='destination-in';dg.drawImage(mask,0,0);
-  // Don't cut a hole in the original drawing when this donor has no ink in
-  // the requested region (common with very different wing/tail anatomy).
-  const probe=document.createElement('canvas');probe.width=64;probe.height=64;
-  const pg=probe.getContext('2d',{willReadFrequently:true});pg.drawImage(donor,0,0,64,64);
-  const pixels=pg.getImageData(0,0,64,64).data;
-  let coverage=0;for(let k=3;k<pixels.length;k+=4)if(pixels[k]>28)coverage++;
-  if(coverage<4)continue;
-  transfers.push(donor);
-  bg.save();bg.globalCompositeOperation='destination-out';bg.drawImage(mask,0,0);bg.restore();
+  const name=names[i];
+  if(!(explicit?explicit.has(name):noiseHash(i+13,29,seed)<amount))continue;
+  const feature=anatomyMask(name,w,h);
+  const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+  const g=cv.getContext('2d');g.drawImage(aligned,0,0);
+  g.globalCompositeOperation='destination-in';g.drawImage(feature,0,0);
+  g.drawImage(silhouette,0,0,w,h);
+  // Do not overlay donor contours on top of the original outline.
+  // Anatomical line replacement will require individually segmented assets.
  }
- // Paint donor features only after all original feature ink has been removed.
- // This avoids later masks accidentally erasing earlier donor details.
- ctx.drawImage(base,0,0);
- for(const donor of transfers)ctx.drawImage(donor,0,0);
 }
 // ctx is reassigned only within draw to compose offscreen layers
 for(let id of ids)$(id).addEventListener('input',()=>{if(id==='hybridAmount')$('hybridAmountLabel').textContent=$('hybridAmount').value+'%';if(id==='tribe'||id==='hybrid'||id==='metal'||id==='accent')sync();if(id==='tribe')renderLayerPalette();draw()});document.querySelectorAll('[data-part]').forEach(b=>b.onclick=()=>{parts.has(b.dataset.part)?parts.delete(b.dataset.part):parts.add(b.dataset.part);b.classList.toggle('selected');draw()});
