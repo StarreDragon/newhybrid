@@ -156,21 +156,7 @@ function perlinScales(a){
   d.data[k+3]=255;
  }
  g.putImageData(d,0,0);ctx.save();ctx.imageSmoothingEnabled=true;ctx.drawImage(cv,0,0,w,h);ctx.restore();
- // A lightweight hand-drawn belly scute rhythm, locked to torso and neck.
- ctx.save();ctx.globalAlpha=.34;ctx.lineWidth=Math.max(1.5,w/470);
- ctx.strokeStyle='#251b2a';
- for(let i=0;i<10;i++){
-  const t=i/9,x=w*(.48+t*.38),y=h*(.67-t*.24+.012*Math.sin(t*13+seed));
-  ctx.beginPath();ctx.moveTo(x-w*.043,y+h*.019);ctx.quadraticCurveTo(x,y+h*.042,x+w*.036,y-h*.011);ctx.stroke();
- }
- // Shallow upper-scale overlapping arcs follow the back and neck.
- ctx.globalAlpha=.26;
- for(let i=0;i<30;i++){
-  const t=i/29,x=w*(.39+t*.49),y=h*(.48-t*.25+.025*Math.sin(t*8+seed));
-  const size=w*(.012+.006*fbm(t*7,2,seed+777));
-  ctx.beginPath();ctx.arc(x,y,size,Math.PI*.05,Math.PI*.95);ctx.stroke();
- }
- ctx.restore();
+ // No synthetic dorsal or belly scute strokes; preserve the artist's original linework.
 }
 function colorize(hex,alpha=1){ctx.globalAlpha=alpha;ctx.fillStyle=hex;ctx.fillRect(0,0,c.width,c.height);ctx.globalAlpha=1}
 
