@@ -82,28 +82,77 @@ function paintAnatomyLayers(a){
  }
  ctx.restore();
 }
+/* Seeded anatomical color map. All regions share the same drawing canvas;
+ * final silhouette clipping is performed by drawInternal. */
 function perlinScales(a){
- const w=c.width,h=c.height,step=4,mw=Math.ceil(w/step),mh=Math.ceil(h/step);
+ const w=c.width,h=c.height,step=3,mw=Math.ceil(w/step),mh=Math.ceil(h/step);
  const cv=document.createElement('canvas');cv.width=mw;cv.height=mh;
  const g=cv.getContext('2d'),d=g.createImageData(mw,mh);
  const seed=anatomySeeded(String(a.anatomySeed||23841)+'|color|'+a.tribe+'|'+(a.hybrid||''));
- const palette=['#d4a16d','#647d9c','#9bb56f','#ba7896','#7c6b9e','#dfc478','#548f89','#b65d57'];
- const offset=seed%palette.length;
- const colors=[0,1,2,3].map(i=>palette[(offset+i*3)%palette.length].match(/../g));
- const rgb=colors.map(hex=>hex.slice(1).map(v=>parseInt(v,16)));
+ const palette=['#d4a16d','#647d9c','#9bb56f','#ba7896','#7c6b9e','#dfc478','#548f89','#b65d57','#bc9f76','#456e74','#dfb8a8'];
+ const parse=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+ const pick=(index)=>parse(palette[(seed%palette.length+index*3)%palette.length]);
+ const dorsal=pick(0),flank=pick(1),belly=pick(2),wing=pick(3),ridge=pick(4);
  const smooth=v=>{v=Math.max(0,Math.min(1,v));return v*v*(3-2*v)};
+ const blend=(a,b,t)=>a.map((v,i)=>v*(1-t)+b[i]*t);
+ const regions=[
+  {x:.59,y:.56,rx:.22,ry:.14,ang:-.20},
+  {x:.78,y:.43,rx:.12,ry:.22,ang:.14},
+  {x:.86,y:.30,rx:.14,ry:.12,ang:0},
+  {x:.52,y:.79,rx:.13,ry:.25,ang:-.09},
+  {x:.77,y:.77,rx:.11,ry:.24,ang:-.12},
+  {x:.29,y:.73,rx:.32,ry:.17,ang:-.25}
+ ];
+ const wings={x:.47,y:.29,rx:.44,ry:.28,ang:-.24};
+ const distance=(x,y,p)=>{const dx=x-p.x,dy=y-p.y,ca=Math.cos(p.ang),sa=Math.sin(p.ang);return Math.hypot((dx*ca+dy*sa)/p.rx,(-dx*sa+dy*ca)/p.ry)};
+ const center=(x,y,p)=>1-smooth((distance(x,y,p)-.65)/.35);
  for(let y=0;y<mh;y++)for(let x=0;x<mw;x++){
-  const nx=x/mw,ny=y/mh,warp=fbm(nx*3+9,ny*3+21,seed+17)-.5;
-  const n=fbm(nx*5+warp*1.7,ny*5+warp*1.7,seed+31);
-  const detail=fbm(nx*14,ny*14,seed+97);
-  const index=n<.36?0:n<.53?1:n<.68?2:3;
-  const next=(index+1)%4,blend=smooth((n-[.26,.44,.59,.76][index])/.17);
+  const nx=(x+.5)/mw,ny=(y+.5)/mh;
+  const warp=fbm(nx*3.1+8,ny*3.1+19,seed+11)-.5;
+  const coarse=fbm(nx*5.4+warp*1.7,ny*5.4+warp*1.2,seed+43);
+  const fine=fbm(nx*18+warp*2,ny*18,seed+89);
+  const line=fbm(nx*8,ny*8,seed+127);
+  let body=Math.max(...regions.map(p=>center(nx,ny,p)));
+  const membrane=center(nx,ny,wings)*smooth((.59-body)*9);
+  const underside=Math.max(0,center(nx,ny,regions[0])*.86,center(nx,ny,regions[1])*.85,center(nx,ny,regions[5])*.53);
+  // Underside follows a gently wandering central ventral band, not a flat ellipse.
+  const ventralY=.62+.065*Math.sin(nx*9+warp*3);
+  const undersideBand=(1-smooth((Math.abs(ny-ventralY)-.012)/.135))*underside;
+  const dorsalBand=body*smooth((.54-ny+warp*.12)*7);
+  let rgb=blend(flank,dorsal,Math.max(0,Math.min(1,.23+dorsalBand*.65+(coarse-.5)*.45)));
+  rgb=blend(rgb,belly,undersideBand*.88);
+  rgb=blend(rgb,wing,membrane*(.72+.18*coarse));
+  // Multiple organically varying ridge, rosette, and freckle layers.
+  const bars=Math.sin((nx*.36+ny*1.3+warp*.16)*54+coarse*6);
+  const ridges=body*smooth((bars-.48)*5)*(.23+.4*dorsalBand);
+  const spots=smooth((fine-.635)*16)*body*.43;
+  const marbling=smooth((Math.sin((nx*.7+ny*.4)*28+warp*12+line*5)-.38)*3)*.19;
+  rgb=blend(rgb,ridge,Math.min(.68,ridges+spots+marbling));
+  if(membrane>.08){
+   const veins=Math.pow(Math.abs(Math.sin((nx*1.4+ny*.8+warp*.07)*55)),24)*membrane*.24;
+   rgb=blend(rgb,dorsal,veins);
+  }
+  const shade=(coarse-.5)*21+(fine-.5)*12;
   const k=(y*mw+x)*4;
-  for(let ch=0;ch<3;ch++)d.data[k+ch]=Math.round(rgb[index][ch]*(1-blend)+rgb[next][ch]*blend+(detail-.5)*30);
+  for(let ch=0;ch<3;ch++)d.data[k+ch]=Math.max(0,Math.min(255,Math.round(rgb[ch]+shade)));
   d.data[k+3]=255;
  }
- g.putImageData(d,0,0);
- ctx.drawImage(cv,0,0,w,h);
+ g.putImageData(d,0,0);ctx.save();ctx.imageSmoothingEnabled=true;ctx.drawImage(cv,0,0,w,h);ctx.restore();
+ // A lightweight hand-drawn belly scute rhythm, locked to torso and neck.
+ ctx.save();ctx.globalAlpha=.19;ctx.lineWidth=Math.max(1,w/580);
+ ctx.strokeStyle='#251b2a';
+ for(let i=0;i<10;i++){
+  const t=i/9,x=w*(.48+t*.38),y=h*(.67-t*.24+.012*Math.sin(t*13+seed));
+  ctx.beginPath();ctx.moveTo(x-w*.043,y+h*.019);ctx.quadraticCurveTo(x,y+h*.042,x+w*.036,y-h*.011);ctx.stroke();
+ }
+ // Shallow upper-scale overlapping arcs follow the back and neck.
+ ctx.globalAlpha=.12;
+ for(let i=0;i<30;i++){
+  const t=i/29,x=w*(.39+t*.49),y=h*(.48-t*.25+.025*Math.sin(t*8+seed));
+  const size=w*(.012+.006*fbm(t*7,2,seed+777));
+  ctx.beginPath();ctx.arc(x,y,size,Math.PI*.05,Math.PI*.95);ctx.stroke();
+ }
+ ctx.restore();
 }
 function colorize(hex,alpha=1){ctx.globalAlpha=alpha;ctx.fillStyle=hex;ctx.fillRect(0,0,c.width,c.height);ctx.globalAlpha=1}
 
