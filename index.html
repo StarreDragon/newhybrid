@@ -438,16 +438,8 @@ function drawHybridLines(primary,secondary,amount,t1,t2,settings){
   const name=names[i],donorWins=explicit?explicit.has(name):noiseHash(i+13,29,seed)<threshold;
   if(!donorWins)continue;
   const mask=anatomyMask(name,w,h);
-  // Restrict the replacement to the dragon's actual silhouette, not the
-  // surrounding rectangular canvas or the entire elliptical feature area.
-  // Slight dilation keeps edge ink at the silhouette boundary visible.
-  const silhouette=masks[t1]?alphaMask(t1):null;
-  if(silhouette){
-   const mg=mask.getContext('2d');
-   mg.globalCompositeOperation='destination-in';
-   mg.drawImage(silhouette,0,0,w,h);
-   mg.globalCompositeOperation='source-over';
-  }
+  // Do not clip inherited ink to the original silhouette: large donor
+  // wings and fins must be allowed to extend beyond the primary outline.
   const donor=document.createElement('canvas');donor.width=w;donor.height=h;
   const dg=donor.getContext('2d');dg.drawImage(aligned,0,0);
   dg.globalCompositeOperation='destination-in';dg.drawImage(mask,0,0);
