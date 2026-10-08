@@ -337,23 +337,51 @@ function anatomyMask(name,w,h){
  g.scale(1/rx,1/ry);g.beginPath();g.ellipse(0,0,rx,ry,0,0,Math.PI*2);g.fill();
  return cv;
 }
+/* Register the donor art to the primary illustration before feature transfer.
+   Registration uses the visible ink bounds, so differing image dimensions and
+   margins do not cause the second dragon to drift off the first. */
+const inkBoundsCache=new WeakMap();
+function inkBounds(im){
+ if(inkBoundsCache.has(im))return inkBoundsCache.get(im);
+ const cv=document.createElement('canvas'),sw=256,sh=256;cv.width=sw;cv.height=sh;
+ const g=cv.getContext('2d',{willReadFrequently:true});g.drawImage(im,0,0,sw,sh);
+ const d=g.getImageData(0,0,sw,sh).data;
+ let x0=sw,y0=sh,x1=0,y1=0,n=0;
+ for(let y=0;y<sh;y+=2)for(let x=0;x<sw;x+=2){
+  const i=(y*sw+x)*4,a=d[i+3],dark=(d[i]+d[i+1]+d[i+2])/3;
+  if(a>65 && dark<215){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);n++}
+ }
+ const b=n>30?{x:x0/sw,y:y0/sh,w:(x1-x0+1)/sw,h:(y1-y0+1)/sh}:{x:0,y:0,w:1,h:1};
+ inkBoundsCache.set(im,b);return b;
+}
+function registeredDonor(primary,secondary,w,h){
+ const a=inkBounds(primary),b=inkBounds(secondary);
+ const scale=Math.min(1.65,Math.max(.6,Math.min(a.w/b.w,a.h/b.h)));
+ const dw=w*scale,dh=h*scale;
+ const ax=(a.x+a.w/2)*w,ay=(a.y+a.h/2)*h;
+ const bx=(b.x+b.w/2)*w*scale,by=(b.y+b.h/2)*h*scale;
+ const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+ cv.getContext('2d').drawImage(secondary,ax-bx,ay-by,dw,dh);
+ return cv;
+}
 function drawHybridLines(primary,secondary,amount,t1,t2,settings){
- const w=c.width,h=c.height,base=document.createElement('canvas');base.width=w;base.height=h;
- const g=base.getContext('2d');g.drawImage(primary,0,0,w,h);
+ const w=c.width,h=c.height;
+ const aligned=registeredDonor(primary,secondary,w,h);
  const names=Object.keys(anatomyRegions),seed=Array.from(t1+'|'+t2).reduce((n,ch)=>Math.imul(n,31)+ch.charCodeAt(0)|0,173);
- const choice=settings&&settings.hybridParts;
- const explicit=choice?new Set(choice.split(',').filter(Boolean)):null;
+ const explicit=settings&&settings.hybridParts?new Set(settings.hybridParts.split(',').filter(Boolean)):null;
  const threshold=Math.max(0,Math.min(1,amount));
+ // Draw the primary exactly once. Overlay donor ink only where a feature
+ // belongs; feathered edges merge without erasing primary contours or leaving
+ // transparent seams at the feature boundaries.
+ ctx.drawImage(primary,0,0,w,h);
  for(let i=0;i<names.length;i++){
   const name=names[i],donorWins=explicit?explicit.has(name):noiseHash(i+13,29,seed)<threshold;
   if(!donorWins)continue;
-  const mask=anatomyMask(name,w,h),donor=document.createElement('canvas');donor.width=w;donor.height=h;
-  const dg=donor.getContext('2d');dg.drawImage(secondary,0,0,w,h);
-  dg.globalCompositeOperation='destination-in';dg.drawImage(mask,0,0);
-  g.save();g.globalCompositeOperation='destination-out';g.drawImage(mask,0,0);g.restore();
-  g.drawImage(donor,0,0);
+  const mask=anatomyMask(name,w,h),layer=document.createElement('canvas');layer.width=w;layer.height=h;
+  const g=layer.getContext('2d');g.drawImage(aligned,0,0);
+  g.globalCompositeOperation='destination-in';g.drawImage(mask,0,0);
+  ctx.save();ctx.globalAlpha=.92;ctx.drawImage(layer,0,0);ctx.restore();
  }
- ctx.drawImage(base,0,0);
 }
 // ctx is reassigned only within draw to compose offscreen layers
 for(let id of ids)$(id).addEventListener('input',()=>{if(id==='hybridAmount')$('hybridAmountLabel').textContent=$('hybridAmount').value+'%';if(id==='tribe'||id==='hybrid'||id==='metal'||id==='accent')sync();if(id==='tribe')renderLayerPalette();draw()});document.querySelectorAll('[data-part]').forEach(b=>b.onclick=()=>{parts.has(b.dataset.part)?parts.delete(b.dataset.part):parts.add(b.dataset.part);b.classList.toggle('selected');draw()});
