@@ -31,6 +31,8 @@ function renderLayerPalette(){
 }
 function paintAnatomyLayers(a){
  const p=currentPalette(),w=c.width,h=c.height,profile=tribeLayerProfiles[a.tribe]||tribeLayerProfiles.SkyWing;
+ // No giant default elliptical patches: only paint regions deliberately recolored
+ // by the artist. The base body color and actual silhouette remain untouched.
  const [hx,hy,bodyX,bodyY]=profile;
  const shapes=[
  ['wing',.48,.27,.39,.21,-.25],['membrane',.53,.34,.28,.15,-.23],
@@ -42,7 +44,8 @@ function paintAnatomyLayers(a){
  ];
  ctx.save();
  for(const [key,x,y,rx,ry,rot] of shapes){
-  const col=p[key]||layerDefaults[key];ctx.fillStyle=col;
+  if(!Object.prototype.hasOwnProperty.call(p,key))continue;
+  const col=p[key];ctx.fillStyle=col;
   ctx.save();ctx.translate(x*w,y*h);ctx.rotate(rot);ctx.beginPath();ctx.ellipse(0,0,rx*w,ry*h,0,0,Math.PI*2);ctx.fill();ctx.restore();
  }
  ctx.restore();
