@@ -505,43 +505,10 @@ function hybridSilhouette(t1,t2,amount,settings,w,h){
  * Keep primary ink intact: without hand-separated feature drawings, replacing
  * whole anatomical regions introduces disconnected wings and duplicate edges. */
 function drawHybridLines(primary,secondary,amount,t1,t2,settings){
- const w=c.width,h=c.height;
- ctx.drawImage(primary,0,0,w,h);
- if(!secondary||amount<=0)return;
- const seed=anatomySeeded(String(settings.anatomySeed||23841)+'|ink|'+t1+'|'+t2);
- const chosen=String(settings.hybridParts||'').split(',').filter(k=>k&&k!=='none');
- if(settings.hybridParts==='none')return;
- const selected=chosen.length?chosen:Object.keys(anatomyRegions);
- const donor=registeredDonor(primary,secondary,w,h);
- const overlay=document.createElement('canvas');overlay.width=w;overlay.height=h;
- const og=overlay.getContext('2d');og.drawImage(donor,0,0);
- const step=4,mw=Math.ceil(w/step),mh=Math.ceil(h/step);
- const noiseCanvas=document.createElement('canvas');noiseCanvas.width=mw;noiseCanvas.height=mh;
- const ng=noiseCanvas.getContext('2d'),pixels=ng.createImageData(mw,mh);
- const regions=selected.map(key=>anatomyRegions[key]).filter(Boolean);
- const smooth=v=>{v=Math.max(0,Math.min(1,v));return v*v*(3-2*v)};
- for(let y=0;y<mh;y++)for(let x=0;x<mw;x++){
-  const nx=(x+.5)/mw,ny=(y+.5)/mh;
-  let region=0;
-  for(const p of regions){
-   const dx=nx-p.cx,dy=ny-p.cy,ca=Math.cos(p.angle),sa=Math.sin(p.angle);
-   const u=(dx*ca+dy*sa)/p.rx,v=(-dx*sa+dy*ca)/p.ry;
-   region=Math.max(region,1-smooth((Math.hypot(u,v)-.48)/.52));
-  }
-  const warp=fbm(nx*3+11,ny*3+17,seed+19)-.5;
-  const n=fbm(nx*5.2+warp*1.4,ny*5.2+warp,seed+73);
-  const coverage=smooth((n-.53+(amount-.5)*.6)*8)*region;
-  const i=(y*mw+x)*4;pixels.data[i]=pixels.data[i+1]=pixels.data[i+2]=255;
-  pixels.data[i+3]=Math.round(255*coverage);
- }
- ng.putImageData(pixels,0,0);
- og.globalCompositeOperation='destination-in';
- og.drawImage(noiseCanvas,0,0,w,h);
- // Prevent ink from detached donor horns, wings, and limbs floating outside
- // the primary silhouette. Hybrid shape replacement requires segmented art.
- og.drawImage(alphaMask(t1),0,0,w,h);
- og.globalCompositeOperation='source-over';
- ctx.drawImage(overlay,0,0);
+ // Keep exactly one registered anatomical drawing. Whole-figure donor
+ // overlays do not share joint anchors and cause visibly doubled features.
+ // Perlin color inheritance is applied separately, inside the primary mask.
+ ctx.drawImage(primary,0,0,c.width,c.height);
 }
 // ctx is reassigned only within draw to compose offscreen layers
 for(let id of ids)$(id).addEventListener('input',()=>{if(id==='hybridAmount')$('hybridAmountLabel').textContent=$('hybridAmount').value+'%';if(id==='tribe'||id==='hybrid'||id==='metal'||id==='accent')sync();if(id==='tribe')renderLayerPalette();draw()});document.querySelectorAll('[data-part]').forEach(b=>b.onclick=()=>{parts.has(b.dataset.part)?parts.delete(b.dataset.part):parts.add(b.dataset.part);b.classList.toggle('selected');draw()});
