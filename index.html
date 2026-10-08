@@ -381,13 +381,19 @@ function inkBounds(im){
  inkBoundsCache.set(im,b);return b;
 }
 function registeredDonor(primary,secondary,w,h){
- const a=inkBounds(primary),b=inkBounds(secondary);
- const scale=Math.min(1.65,Math.max(.6,Math.min(a.w/b.w,a.h/b.h)));
- const dw=w*scale,dh=h*scale;
- const ax=(a.x+a.w/2)*w,ay=(a.y+a.h/2)*h;
- const bx=(b.x+b.w/2)*w*scale,by=(b.y+b.h/2)*h*scale;
+ // Preserve original proportions. Matching whole-figure ink bounds shrank
+ // dragons with broad wings because the wings dominated the bounding box.
+ // Both source drawings share the same normalized layout; register their
+ // body/shoulder anchors without resizing the donor's anatomy.
  const cv=document.createElement('canvas');cv.width=w;cv.height=h;
- cv.getContext('2d').drawImage(secondary,ax-bx,ay-by,dw,dh);
+ const g=cv.getContext('2d');
+ const pw=primary.naturalWidth||w,ph=primary.naturalHeight||h;
+ const sw=secondary.naturalWidth||w,sh=secondary.naturalHeight||h;
+ // Map full source canvases into the same normalized coordinates; this is
+ // independent of wing span and does not crop the donor's wings.
+ const scale=Math.min(w/sw,h/sh);
+ const dw=sw*scale,dh=sh*scale;
+ g.drawImage(secondary,(w-dw)/2,(h-dh)/2,dw,dh);
  return cv;
 }
 function drawHybridLines(primary,secondary,amount,t1,t2,settings){
