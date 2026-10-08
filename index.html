@@ -82,6 +82,29 @@ function paintAnatomyLayers(a){
  }
  ctx.restore();
 }
+function perlinScales(a){
+ const w=c.width,h=c.height,step=4,mw=Math.ceil(w/step),mh=Math.ceil(h/step);
+ const cv=document.createElement('canvas');cv.width=mw;cv.height=mh;
+ const g=cv.getContext('2d'),d=g.createImageData(mw,mh);
+ const seed=anatomySeeded(String(a.anatomySeed||23841)+'|color|'+a.tribe+'|'+(a.hybrid||''));
+ const palette=['#d4a16d','#647d9c','#9bb56f','#ba7896','#7c6b9e','#dfc478','#548f89','#b65d57'];
+ const offset=seed%palette.length;
+ const colors=[0,1,2,3].map(i=>palette[(offset+i*3)%palette.length].match(/../g));
+ const rgb=colors.map(hex=>hex.slice(1).map(v=>parseInt(v,16)));
+ const smooth=v=>{v=Math.max(0,Math.min(1,v));return v*v*(3-2*v)};
+ for(let y=0;y<mh;y++)for(let x=0;x<mw;x++){
+  const nx=x/mw,ny=y/mh,warp=fbm(nx*3+9,ny*3+21,seed+17)-.5;
+  const n=fbm(nx*5+warp*1.7,ny*5+warp*1.7,seed+31);
+  const detail=fbm(nx*14,ny*14,seed+97);
+  const index=n<.36?0:n<.53?1:n<.68?2:3;
+  const next=(index+1)%4,blend=smooth((n-[.26,.44,.59,.76][index])/.17);
+  const k=(y*mw+x)*4;
+  for(let ch=0;ch<3;ch++)d.data[k+ch]=Math.round(rgb[index][ch]*(1-blend)+rgb[next][ch]*blend+(detail-.5)*30);
+  d.data[k+3]=255;
+ }
+ g.putImageData(d,0,0);
+ ctx.drawImage(cv,0,0,w,h);
+}
 function colorize(hex,alpha=1){ctx.globalAlpha=alpha;ctx.fillStyle=hex;ctx.fillRect(0,0,c.width,c.height);ctx.globalAlpha=1}
 
 function noiseHash(x,y,z){let n=Math.imul(x,374761393)+Math.imul(y,668265263)+Math.imul(z,1442695041);n=Math.imul(n^(n>>>13),1274126177);return ((n^(n>>>16))>>>0)/4294967295}
@@ -413,10 +436,11 @@ async function drawInternal(){
  const layer=document.createElement('canvas');layer.width=c.width;layer.height=c.height;
  const main=ctx;ctx=layer.getContext('2d');
  try{
- colorize(a.body);
- paintAnatomyLayers(a);
+ perlinScales(a);
+ // The body is entirely generated from seeded noise, not a flat base fill.
+
  if(t==='SharpWing'){if(a.finish==='patina')a.mark='#6d9b88';else if(a.finish==='rust')a.mark='#8b5135';else if(a.finish==='tarnish')a.mark='#68645e';a.pattern=a.finish==='clean'?'none':'speckles';a.opacity='44';a.scale='80'}
- pattern(a);hybridInheritance(a);paintStrokes();decorations(a);
+ pattern(a);paintStrokes();decorations(a);
  const silhouette=a.hybrid&&a.hybrid!=='None'&&!isBlocked(t,a.hybrid)?hybridSilhouette(t,a.hybrid,(+a.hybridAmount||0)/100,a,c.width,c.height):alphaMask(t);
  ctx.globalCompositeOperation='destination-in';ctx.drawImage(silhouette,0,0,c.width,c.height);
  ctx.globalCompositeOperation='source-over';
@@ -514,39 +538,27 @@ function hybridRegions(t1,t2,amount,settings,w,h){
  return names.filter((name,i)=>explicit?explicit.has(name):noiseHash(i+13,29,seed)<threshold)
   .map(name=>anatomyMask(name,w,h));
 }
-/* Safe hybrid rendering: until anatomy-specific masks and attachment anchors
- * are available, the primary art owns the outer silhouette. This prevents
- * disconnected donor mask islands from appearing outside the dragon. */
-function hybridSilhouette(t1,t2,amount,settings,w,h){
- const cv=document.createElement('canvas');cv.width=w;cv.height=h;
- cv.getContext('2d').drawImage(alphaMask(t1),0,0,w,h);
- return cv;
-}
-/* Perlin-select donor linework inside the primary dragon silhouette.
- * Keep primary ink intact: without hand-separated feature drawings, replacing
- * whole anatomical regions introduces disconnected wings and duplicate edges. */
 const originalSeven=new Set(['MudWing','SandWing','SkyWing','SeaWing','RainWing','IceWing','NightWing']);
-function drawHybridLines(primary,secondary,amount,t1,t2,settings){
- const w=c.width,h=c.height;
- if(!secondary||amount<=0){ctx.drawImage(primary,0,0,w,h);return}
- // The original seven were drawn on matching coordinates: never register,
- // shift, or resize their 7×7 combinations.
- const donor=(originalSeven.has(t1)&&originalSeven.has(t2))
-  ? (()=>{const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(secondary,0,0,w,h);return cv})()
-  : registeredDonor(primary,secondary,w,h,t1,t2);
- // One Perlin selection field shared by both parents: where donor ink is
- // visible, base ink is removed, preventing two overlapping outlines.
+function hybridDonorCanvas(t1,t2,w,h){
+ const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+ if(originalSeven.has(t1)&&originalSeven.has(t2)){
+  cv.getContext('2d').drawImage(images[t2],0,0,w,h);
+  return cv;
+ }
+ return registeredDonor(images[t1],images[t2],w,h,t1,t2);
+}
+function inheritanceField(t1,t2,amount,settings,w,h){
  const step=3,mw=Math.ceil(w/step),mh=Math.ceil(h/step);
- const noiseCanvas=document.createElement('canvas');noiseCanvas.width=mw;noiseCanvas.height=mh;
- const ng=noiseCanvas.getContext('2d'),pixels=ng.createImageData(mw,mh);
+ const small=document.createElement('canvas');small.width=mw;small.height=mh;
+ const g=small.getContext('2d'),pixels=g.createImageData(mw,mh);
  const seed=anatomySeeded(String(settings.anatomySeed||23841)+'|ink|'+t1+'|'+t2);
  const selected=String(settings.hybridParts||'').split(',').filter(k=>k&&k!=='none');
- const regionList=selected.length?selected.map(k=>anatomyRegions[k]).filter(Boolean):Object.values(anatomyRegions);
+ const regions=selected.length?selected.map(k=>anatomyRegions[k]).filter(Boolean):Object.values(anatomyRegions);
  const smooth=v=>{v=Math.max(0,Math.min(1,v));return v*v*(3-2*v)};
  for(let y=0;y<mh;y++)for(let x=0;x<mw;x++){
   const nx=(x+.5)/mw,ny=(y+.5)/mh;
-  let region=settings.hybridParts==='none'?0:0;
-  for(const p of regionList){
+  let region=0;
+  if(settings.hybridParts!=='none')for(const p of regions){
    const dx=nx-p.cx,dy=ny-p.cy,ca=Math.cos(p.angle),sa=Math.sin(p.angle);
    const u=(dx*ca+dy*sa)/p.rx,v=(-dx*sa+dy*ca)/p.ry;
    region=Math.max(region,1-smooth((Math.hypot(u,v)-.65)/.42));
@@ -559,17 +571,44 @@ function drawHybridLines(primary,secondary,amount,t1,t2,settings){
   pixels.data[i]=pixels.data[i+1]=pixels.data[i+2]=255;
   pixels.data[i+3]=Math.round(255*coverage);
  }
- ng.putImageData(pixels,0,0);
+ g.putImageData(pixels,0,0);
  const field=document.createElement('canvas');field.width=w;field.height=h;
- field.getContext('2d').drawImage(noiseCanvas,0,0,w,h);
+ field.getContext('2d').drawImage(small,0,0,w,h);
+ return field;
+}
+function hybridSilhouette(t1,t2,amount,settings,w,h){
+ const primary=alphaMask(t1),secondary=alphaMask(t2);
+ const donor=document.createElement('canvas');donor.width=w;donor.height=h;
+ if(originalSeven.has(t1)&&originalSeven.has(t2))donor.getContext('2d').drawImage(secondary,0,0,w,h);
+ else {
+  const sw=secondary.width,sh=secondary.height,scale=Math.min(w/sw,h/sh);
+  const p=torsoAnchor(t1),q=torsoAnchor(t2);
+  donor.getContext('2d').drawImage(secondary,p.x*w-q.x*sw*scale,p.y*h-q.y*sh*scale,sw*scale,sh*scale);
+ }
+ const field=inheritanceField(t1,t2,amount,settings,w,h);
+ const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+ const g=cv.getContext('2d');
+ // Keep all of the primary silhouette and add donor-owned anatomy where
+ // the SAME field selects the donor's linework. No detached solid rectangles.
+ g.drawImage(primary,0,0,w,h);
+ const addition=document.createElement('canvas');addition.width=w;addition.height=h;
+ const ag=addition.getContext('2d');ag.drawImage(donor,0,0,w,h);
+ ag.globalCompositeOperation='destination-in';ag.drawImage(field,0,0,w,h);
+ g.drawImage(addition,0,0);
+ return cv;
+}
+function drawHybridLines(primary,secondary,amount,t1,t2,settings){
+ const w=c.width,h=c.height;
+ if(!secondary||amount<=0){ctx.drawImage(primary,0,0,w,h);return}
+ const donor=hybridDonorCanvas(t1,t2,w,h);
+ const field=inheritanceField(t1,t2,amount,settings,w,h);
  const base=document.createElement('canvas');base.width=w;base.height=h;
  const bg=base.getContext('2d');bg.drawImage(primary,0,0,w,h);
  bg.globalCompositeOperation='destination-out';bg.drawImage(field,0,0,w,h);
- const donorLayer=document.createElement('canvas');donorLayer.width=w;donorLayer.height=h;
- const dg=donorLayer.getContext('2d');dg.drawImage(donor,0,0,w,h);
- dg.globalCompositeOperation='destination-in';dg.drawImage(field,0,0,w,h);
- ctx.drawImage(base,0,0,w,h);
- ctx.drawImage(donorLayer,0,0,w,h);
+ const overlay=document.createElement('canvas');overlay.width=w;overlay.height=h;
+ const og=overlay.getContext('2d');og.drawImage(donor,0,0,w,h);
+ og.globalCompositeOperation='destination-in';og.drawImage(field,0,0,w,h);
+ ctx.drawImage(base,0,0,w,h);ctx.drawImage(overlay,0,0,w,h);
 }
 // ctx is reassigned only within draw to compose offscreen layers
 for(let id of ids)$(id).addEventListener('input',()=>{if(id==='hybridAmount')$('hybridAmountLabel').textContent=$('hybridAmount').value+'%';if(id==='tribe'||id==='hybrid'||id==='metal'||id==='accent')sync();if(id==='tribe')renderLayerPalette();draw()});document.querySelectorAll('[data-part]').forEach(b=>b.onclick=()=>{parts.has(b.dataset.part)?parts.delete(b.dataset.part):parts.add(b.dataset.part);b.classList.toggle('selected');draw()});
