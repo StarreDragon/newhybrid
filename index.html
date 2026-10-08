@@ -626,26 +626,12 @@ function inheritanceField(t1,t2,amount,settings,w,h){
  return field;
 }
 function hybridSilhouette(t1,t2,amount,settings,w,h){
- const primary=alphaMask(t1),secondary=alphaMask(t2);
- const donor=document.createElement('canvas');donor.width=w;donor.height=h;
- const dg=donor.getContext('2d');
- // Original seven share pixel coordinates: absolutely no registration.
- if(originalSeven.has(t1)&&originalSeven.has(t2))dg.drawImage(secondary,0,0,w,h);
- else {
-  const sw=secondary.width,sh=secondary.height,scale=Math.min(w/sw,h/sh);
-  dg.drawImage(secondary,(w-sw*scale)/2,(h-sh*scale)/2,sw*scale,sh*scale);
- }
- const field=inheritanceField(t1,t2,amount,settings,w,h);
- // Donor contributes ONLY its own masked shape within Perlin-selected areas.
- const donorPart=document.createElement('canvas');donorPart.width=w;donorPart.height=h;
- const pg=donorPart.getContext('2d');pg.drawImage(donor,0,0,w,h);
- pg.globalCompositeOperation='destination-in';pg.drawImage(field,0,0,w,h);
- // Replace the primary only where donor mask actually exists. A plain
- // union leaves SandWing wing/tail masks visibly stacked and doubled.
+ // Never let unregistered donor silhouettes create floating color islands.
+ // Keep the primary silhouette as the single color boundary. Perlin
+ // inheritance continues inside it; external donor anatomy requires
+ // feature-specific registration before it can safely expand the shape.
  const cv=document.createElement('canvas');cv.width=w;cv.height=h;
- const g=cv.getContext('2d');g.drawImage(primary,0,0,w,h);
- g.globalCompositeOperation='destination-out';g.drawImage(donorPart,0,0,w,h);
- g.globalCompositeOperation='source-over';g.drawImage(donorPart,0,0,w,h);
+ cv.getContext('2d').drawImage(alphaMask(t1),0,0,w,h);
  return cv;
 }
 function drawHybridLines(primary,secondary,amount,t1,t2,settings){
@@ -659,6 +645,11 @@ function drawHybridLines(primary,secondary,amount,t1,t2,settings){
  const overlay=document.createElement('canvas');overlay.width=w;overlay.height=h;
  const og=overlay.getContext('2d');og.drawImage(donor,0,0,w,h);
  og.globalCompositeOperation='destination-in';og.drawImage(field,0,0,w,h);
+ // Clip transferred ink to the SAME silhouette as its color layer.
+ // This prevents ghost heads/feet and outlines in transparent space.
+ og.globalCompositeOperation='destination-in';
+ og.drawImage(alphaMask(t1),0,0,w,h);
+ og.globalCompositeOperation='source-over';
  ctx.drawImage(base,0,0,w,h);ctx.drawImage(overlay,0,0,w,h);
 }
 // ctx is reassigned only within draw to compose offscreen layers
