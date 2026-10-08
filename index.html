@@ -98,29 +98,52 @@ function decorations(a){if(a.tribe!=='SharpWing')return;let accent=metalColors[a
 let drawTicket=0;async /* Organic color inheritance: multi-octave gradient noise produces broad,
  * feathered patches rather than rectangular splits, solid bands or circles.
  * Final clipping is performed by the generated hybrid silhouette. */
+/* Perlin-guided hybrid inheritance. Each anatomical region receives a
+ * stable, seeded blend weight; fine noise makes the edges organic. This
+ * changes COLOR only. Real lineart remains a single intact drawing until
+ * individually separated anatomical lineart assets are available. */
 function hybridInheritance(a){
  if(!a.hybrid||a.hybrid==='None'||isBlocked(a.tribe,a.hybrid))return;
  const amount=Math.max(0,Math.min(1,(+a.hybridAmount||0)/100));if(!amount)return;
- const w=c.width,h=c.height,res=4,cw=Math.ceil(w/res),ch=Math.ceil(h/res);
+ const w=c.width,h=c.height,scale=4,cw=Math.ceil(w/scale),ch=Math.ceil(h/scale);
  const cv=document.createElement('canvas');cv.width=cw;cv.height=ch;
  const g=cv.getContext('2d'),im=g.createImageData(cw,ch);
  const hex=(a.hybridColor||'#8db7b2').replace('#','');
  const rgb=[0,2,4].map(i=>parseInt(hex.slice(i,i+2),16)||0);
  const seed=anatomySeeded(String(a.anatomySeed||23841)+'|'+a.tribe+'|'+a.hybrid);
  const style=a.hybridStyle||'patches';
- const smooth=(x)=>{x=Math.max(0,Math.min(1,x));return x*x*(3-2*x)};
+ const chosen=new Set(String(a.hybridParts||'').split(',').filter(Boolean));
+ const regionKeys=['wings','head','horns','neck','torso','frontlegs','backlegs','tail'];
+ const regions=regionKeys.map((key,i)=>{
+  const p=anatomyRegions[key];
+  const weight=chosen.size?(chosen.has(key)?1:.12):Math.max(.05,Math.min(.95,amount+(noiseHash(seed%65521,i*19,47)-.5)*.45));
+  return {p,weight};
+ });
+ const smooth=x=>{x=Math.max(0,Math.min(1,x));return x*x*(3-2*x)};
  for(let y=0;y<ch;y++)for(let x=0;x<cw;x++){
-  const nx=x/cw,ny=y/ch;
-  const warp=fbm(nx*3.1+19,ny*3.1+37,seed+19)-.5;
-  const n=fbm(nx*5.2+warp*1.35,ny*5.2+warp*.9,seed+101);
+  const nx=(x+.5)/cw,ny=(y+.5)/ch;
+  const warp=fbm(nx*3.5+19,ny*3.5+37,seed+19)-.5;
+  const coarse=fbm(nx*5.6+warp*1.3,ny*5.6+warp,seed+101);
   const fine=fbm(nx*17+warp*2,ny*17,seed+303);
-  let v;
-  if(style==='split')v=smooth((nx+.18*warp-.52)*8+(n-.5)*3);
-  else if(style==='bands')v=smooth((Math.sin((nx*.72+ny*.95+warp*.2)*26)+(n-.5)*1.7-.12)*2.5);
-  else if(style==='freckles')v=smooth((fine-.59)*11)*smooth((n-.32)*5);
-  else v=smooth((n-.51+(fine-.5)*.22)*9);
-  const k=(y*cw+x)*4;im.data[k]=rgb[0];im.data[k+1]=rgb[1];im.data[k+2]=rgb[2];
-  im.data[k+3]=Math.round(255*v*Math.min(.85,.18+amount*.68));
+  let influence=amount;
+  let best=0;
+  for(const {p,weight} of regions){
+   const dx=nx-p.cx,dy=ny-p.cy,ca=Math.cos(p.angle),sa=Math.sin(p.angle);
+   const u=(dx*ca+dy*sa)/p.rx,v=(-dx*sa+dy*ca)/p.ry;
+   const radial=Math.sqrt(u*u+v*v);
+   const proximity=1-smooth((radial-.55)/.60);
+   if(proximity>best){best=proximity;influence=amount*(1-proximity)+weight*proximity;}
+  }
+  // Noise changes the boundary inside an anatomical region; it never
+  // moves/warps actual wing, tail, head or limb lineart.
+  const threshold=.68-.43*influence;
+  let coverage=smooth((coarse-threshold+(fine-.5)*.16)*9);
+  if(style==='split')coverage=smooth((nx+.2*warp-.68+.38*influence)*9+(coarse-.5)*2);
+  else if(style==='bands')coverage*=smooth((Math.sin((nx*.72+ny*.95+warp*.18)*24)+.18)*3);
+  else if(style==='freckles')coverage*=smooth((fine-.57)*13);
+  const k=(y*cw+x)*4;
+  im.data[k]=rgb[0];im.data[k+1]=rgb[1];im.data[k+2]=rgb[2];
+  im.data[k+3]=Math.round(255*coverage*(.15+.72*amount));
  }
  g.putImageData(im,0,0);
  ctx.save();ctx.imageSmoothingEnabled=true;ctx.drawImage(cv,0,0,w,h);ctx.restore();
@@ -446,27 +469,9 @@ function hybridSilhouette(t1,t2,amount,settings,w,h){
  return cv;
 }
 function drawHybridLines(primary,secondary,amount,t1,t2,settings){
- const w=c.width,h=c.height;
- // Draw the original illustration intact. Inherited interior details can
- // appear only inside its real color mask; no feature cutouts or detached
- // donor outlines are permitted in safe mode.
- ctx.drawImage(primary,0,0,w,h);
- const aligned=registeredDonor(primary,secondary,w,h);
- const silhouette=alphaMask(t1);
- const seed=Array.from(t1+'|'+t2).reduce((n,ch)=>Math.imul(n,31)+ch.charCodeAt(0)|0,173);
- const explicit=settings&&settings.hybridParts?new Set(settings.hybridParts.split(',').filter(Boolean)):null;
- const names=['torso','neck','head'];
- for(let i=0;i<names.length;i++){
-  const name=names[i];
-  if(!(explicit?explicit.has(name):noiseHash(i+13,29,seed)<amount))continue;
-  const feature=anatomyMask(name,w,h);
-  const cv=document.createElement('canvas');cv.width=w;cv.height=h;
-  const g=cv.getContext('2d');g.drawImage(aligned,0,0);
-  g.globalCompositeOperation='destination-in';g.drawImage(feature,0,0);
-  g.drawImage(silhouette,0,0,w,h);
-  // Do not overlay donor contours on top of the original outline.
-  // Anatomical line replacement will require individually segmented assets.
- }
+ // Never overlay separate full-figure linearts: they cannot align at
+ // anatomical joints without manually segmented artwork.
+ ctx.drawImage(primary,0,0,c.width,c.height);
 }
 // ctx is reassigned only within draw to compose offscreen layers
 for(let id of ids)$(id).addEventListener('input',()=>{if(id==='hybridAmount')$('hybridAmountLabel').textContent=$('hybridAmount').value+'%';if(id==='tribe'||id==='hybrid'||id==='metal'||id==='accent')sync();if(id==='tribe')renderLayerPalette();draw()});document.querySelectorAll('[data-part]').forEach(b=>b.onclick=()=>{parts.has(b.dataset.part)?parts.delete(b.dataset.part):parts.add(b.dataset.part);b.classList.toggle('selected');draw()});
