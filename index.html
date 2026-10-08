@@ -362,13 +362,39 @@ async function drawArtGuided(a,ticket){
  $('stage').classList.toggle('paint',a.paintmode);
 }
 async function draw(){
+ try{
+  await drawInternal();
+  if(!c.width||!c.height)throw new Error('Artwork canvas has no dimensions');
+ }catch(error){
+  console.error('Dragonforge render failed:',error);
+  if($('notice'))$('notice').textContent='Hybrid render failed; showing original dragon. '+(error?.message||'');
+  try{
+   const a=get(),t=a.tribe;
+   await prepare(t);
+   const im=images[t];
+   if(im?.naturalWidth&&im?.naturalHeight){
+    c.width=im.naturalWidth;c.height=im.naturalHeight;
+    ctx.clearRect(0,0,c.width,c.height);
+    ctx.fillStyle=a.body||'#b88b69';
+    ctx.fillRect(0,0,c.width,c.height);
+    if(masks[t]){
+     ctx.globalCompositeOperation='destination-in';
+     ctx.drawImage(alphaMask(t),0,0,c.width,c.height);
+     ctx.globalCompositeOperation='source-over';
+    }
+    ctx.drawImage(im,0,0,c.width,c.height);
+   }
+  }catch(fallbackError){console.error('Dragonforge fallback failed:',fallbackError)}
+ }
+}
+async function drawInternal(){
  const ticket=++drawTicket,a=get(),t=a.tribe;
  if(a.lineEngine==='procedural'){drawProcedural(a);return}
  if(a.lineEngine==='artguided'){await drawArtGuided(a,ticket);return}
  try{await prepare(t);if(a.hybrid&&a.hybrid!=='None'&&!isBlocked(t,a.hybrid))await prepare(a.hybrid)}
  catch(e){$('notice').textContent='Could not load dragon art: '+(e.message||'missing asset');return}
  if(ticket!==drawTicket)return;
- const im=images[t],mask=masks[t];c.width=im.naturalWidth;c.height=im.naturalHeight;
+ const im=images[t],mask=masks[t];if(!im?.naturalWidth||!im?.naturalHeight)throw new Error('Dragon image did not load');c.width=im.naturalWidth;c.height=im.naturalHeight;
  ctx.clearRect(0,0,c.width,c.height);
  if(a.paper){ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height)}
  const layer=document.createElement('canvas');layer.width=c.width;layer.height=c.height;
